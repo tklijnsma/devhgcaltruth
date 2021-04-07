@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 from contextlib import contextmanager
 
 import uptools
-import trees
 
 # ___________________________________________________
 # General utils
@@ -169,7 +168,7 @@ def shuffle_colors(seed=1001):
 class IDColor:
     '''Returns a consistent color when given the same object'''
     def __init__(self, colors=None, seed=44):
-        self.colors = list(mcd.XKCD_COLORS.keys()) if colors is None else colors
+        self.colors = list(mcd.XKCD_COLORS.values()) if colors is None else colors
         np.random.seed(seed)
         np.random.shuffle(self.colors)
         self._original_colors = self.colors.copy()
@@ -261,3 +260,7 @@ def split_endcaps(root, flip=False):
     if flip:
         neg = trees.flipz_tree(neg)
     return pos, neg
+
+
+from . import trees
+from . import plotly_plotting as plotly

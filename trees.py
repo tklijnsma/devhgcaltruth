@@ -1,7 +1,7 @@
 from math import pi
 import matplotlib.pyplot as plt
 import numpy as np, logging, os.path as osp, os
-import hgcalntuptool
+from . import hgcalntuptool
 logger = hgcalntuptool.logger
 import numba
 
@@ -371,6 +371,13 @@ class Track(object):
         tolist = lambda h: [h.x, h.y, h.z, h.energy] if include_energy else [h.x, h.y, h.z]
         mat = [ tolist(h) for h in self.hits ]
         return np.array(mat)
+
+    def nphits_recursively(self, include_energy=True):
+        hits = []
+        for track in self.traverse():
+            if track.nhits == 0: continue
+            hits.append(track.nphits(include_energy))
+        return np.concatenate(hits)
 
 
 class Hit(object):
@@ -1283,7 +1290,17 @@ def merging_algo(root, inplace=False, progress=True, **kwargs):
         i += 1
     if progress: pbar.close()
     return root
-                 
+
+
+def merging_algo_overlap(root, **kwargs):
+    '''
+    Shortcut for merging_algo fn above, with cached overlap function
+    '''
+    cached_dst = CachedDistFn(overlap)
+    kwargs.setdefault('use_overlap_algo', True)
+    kwargs.setdefault('overlap_fn', cached_dst)
+    return merging_algo(root, **kwargs)
+
 
 def savefig(*args, **kwargs):
     '''
