@@ -263,4 +263,4 @@ def split_endcaps(root, flip=False):
 
 
 from . import trees
-from . import plotly_plotting as plotly
+from . import _plotly as plotly

@@ -1,9 +1,9 @@
 from math import pi
 import matplotlib.pyplot as plt
 import numpy as np, logging, os.path as osp, os
-from . import hgcalntuptool
-logger = hgcalntuptool.logger
 import numba
+import devhgcaltruth as ht
+logger = ht.logger
 
 def traverse(node, yield_depth=False, depth=0):
     yield (node, depth) if yield_depth else node
@@ -549,7 +549,7 @@ def plot_node(node, ax=None, labels=True, plot_hits=True, color_by_pdgid=True, s
         ax = fig.add_subplot(111 , projection='3d')
 
     for track in node.traverse():
-        color = hgcalntuptool.color_pdgid(track.pdgid) if color_by_pdgid else hgcalntuptool.color_for_id(track.trackid)
+        color = ht.color_pdgid(track.pdgid) if color_by_pdgid else ht.color_for_id(track.trackid)
         x_in, y_in, z_in = track.vertex_x, track.vertex_y, track.vertex_z
         x_out, y_out, z_out = track.x, track.y, track.z
 
@@ -584,9 +584,9 @@ def plot_node(node, ax=None, labels=True, plot_hits=True, color_by_pdgid=True, s
         pos_endcap = node.z > 0.        
         if pos_endcap:
             zmin = 0.
-            zmax = hgcalntuptool.HGCAL_ZMAX_POS
+            zmax = ht.HGCAL_ZMAX_POS
         else:
-            zmin = hgcalntuptool.HGCAL_ZMIN_NEG
+            zmin = ht.HGCAL_ZMIN_NEG
             zmax = 0.
 
         max_xy_dim = 50.
@@ -663,7 +663,7 @@ def plot_node_rotated(
     for i_track, track in enumerate(traverse(node)):
         if plot_shower_axis and track.nhits == 0: continue
         total_nhits += track.nhits
-        c = hgcalntuptool.color_pdgid(track.pdgid) if color_by_pdgid else hgcalntuptool.color_for_id(track.trackid)
+        c = ht.color_pdgid(track.pdgid) if color_by_pdgid else ht.color_for_id(track.trackid)
 
         vertex = np.array([track.vertex_x, track.vertex_y, flipz*track.vertex_z]) - origin
         vertex_norm = np.linalg.norm(vertex)
@@ -739,7 +739,7 @@ def plot_node_rotated(
     max_perpendicular_dim = max(10., max_perpendicular_dim) # Ensure some minimum dimension
     
     if zmin is None: zmin = 0.
-    if zmax is None: zmax = min(hgcalntuptool.HGCAL_ZMAX_POS, max_longitudinal_dim)
+    if zmax is None: zmax = min(ht.HGCAL_ZMAX_POS, max_longitudinal_dim)
 
     ax.set_xlim(zmin, zmax)
     ax.set_xlabel('z')
@@ -754,7 +754,7 @@ def plot_node_rotated(
         .format(
             node.trackid, node.energy, len(list(traverse(node))), total_nhits
             ),
-        color=hgcalntuptool.color_pdgid(node.pdgid) if color_by_pdgid else hgcalntuptool.color_for_id(node.trackid),
+        color=ht.color_pdgid(node.pdgid) if color_by_pdgid else ht.color_for_id(node.trackid),
         fontsize=14,
         horizontalalignment='left',
         verticalalignment='top',
@@ -1102,7 +1102,7 @@ def overlap(t1, t2, draw=False, use_numba=True):
             ax.set_zlim(o[1]-15., o[1]+15.)
 
             for t in [t1, t2]:
-                c = hgcalntuptool.color_for_id(t.trackid)
+                c = ht.color_for_id(t.trackid)
                 ax.plot([t.b[2], t.e[2]], [t.b[0], t.e[0]], [t.b[1], t.e[1]], c=c, linewidth=2., linestyle='--')
                 # Also draw axis from .1 to .9 longitudinal energy containment
                 b = t.b + t.longitudinal_energy_containment(.1) * t.axis
