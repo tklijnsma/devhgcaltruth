@@ -1,7 +1,7 @@
 import numpy as np
 import devhgcaltruth as ht
 
-def plotly_tree(tree, colorwheel=None, noinfo=False):
+def plotly_tree(tree, colorwheel=None, noinfo=False, draw_tracks=True):
     import plotly.graph_objects as go
     data = []
     info = {}
@@ -54,49 +54,70 @@ def plotly_tree(tree, colorwheel=None, noinfo=False):
                 color=colorwheel(int(track.trackid)),
                 ),
             hovertemplate=(
-                'x: %{{z:0.2f}}<br>y: %{{x:0.2f}}<br>z: %{{y:0.2f}}<br>pdgId: {}<br>'
+                'x: %{{y:0.2f}}<br>y: %{{z:0.2f}}<br>z: %{{x:0.2f}}<br>pdgId: {}<br>'
                 .format(track.pdgid)
                 ),
             name=str(int(track.trackid)),
             legendgroup=str(int(track.trackid))
             ))
 
-        # Second, draw track from boundary crossing to hit centroid
-        bpos = track.average_boundary_pos()
-        data.append(go.Scatter3d(
-            x=[bpos[2], track.centroid[2]], y=[bpos[0], track.centroid[0]], z=[bpos[1], track.centroid[1]],
-            mode='lines+markers',
-            marker=dict(
-                size=[4, 10],
-                symbol=['x', 'diamond']
-                ),
-            line=dict(
-                width=3,
-                color=colorwheel(int(track.trackid)),
-                ),
-            hovertemplate=(
-                'x: %{{y:.2f}}<br>y: %{{z:.2f}}<br>z: %{{x:.2f}}<br>E: {energy:.2f} GeV<br>pdgid: {pdgid}<br>nhits: {nhits}<br>'
-                .format(
-                    energy = track.energyAtBoundary, pdgid = track.pdgid,
-                    nhits = track.nhits
-                    )
-                ),
-            name=str(int(track.trackid)),
-            legendgroup=str(int(track.trackid)),
-            showlegend=False
-            ))
+        if draw_tracks:
+            # Second, draw track from boundary crossing to hit centroid
+            bpos = track.average_boundary_pos()
+            data.append(go.Scatter3d(
+                x=[bpos[2], track.centroid[2]], y=[bpos[0], track.centroid[0]], z=[bpos[1], track.centroid[1]],
+                mode='lines+markers',
+                marker=dict(
+                    size=[4, 10],
+                    symbol=['x', 'diamond']
+                    ),
+                line=dict(
+                    width=3,
+                    color=colorwheel(int(track.trackid)),
+                    ),
+                hovertemplate=(
+                    'x: %{{y:.2f}}<br>y: %{{z:.2f}}<br>z: %{{x:.2f}}<br>E: {energy:.2f} GeV<br>pdgid: {pdgid}<br>nhits: {nhits}<br>'
+                    .format(
+                        energy = track.energyAtBoundary, pdgid = track.pdgid,
+                        nhits = track.nhits
+                        )
+                    ),
+                name=str(int(track.trackid)),
+                legendgroup=str(int(track.trackid)),
+                showlegend=False
+                ))
     
     return data if noinfo else (data, info)
 
 
-def side_by_side_trees(tree1, tree2, title1=None, title2=None, colorwheel=None):
+def side_by_side_trees(tree1, tree2, colorwheel=None, **kwargs):
     if colorwheel is None: colorwheel = ht.IDColor()
     data1, info1 = ht.plotly.plotly_tree(tree1, colorwheel=colorwheel)
     data2 = ht.plotly.plotly_tree(tree2, colorwheel=colorwheel, noinfo=True)
-    return side_by_side_html(data1, data2, info1, title1, title2)
+    return side_by_side_html(data1, data2, info1, **kwargs)
 
 
-def side_by_side_html(data1, data2, info=None, title1=None, title2=None):
+
+def single_html(data, info=None, title=None, width=600, height=None, include_plotlyjs='cdn'):
+    import plotly.graph_objects as go
+    if height is None: height = width
+    scene = dict(
+        xaxis_title='z', yaxis_title='x', zaxis_title='y',
+        aspectmode='cube'
+        )
+    if info:
+        scene.update(dict(
+            xaxis_range=[320., info['zmax']],
+            yaxis_range=[info['xmin'], info['xmax']],
+            zaxis_range=[info['ymin'], info['ymax']],
+            ))
+    fig = go.Figure(data=data, **(dict(layout_title_text=title) if title else {}))
+    fig.update_layout(width=width, height=height, scene=scene)
+    fig_html = fig.to_html(full_html=False, include_plotlyjs=include_plotlyjs)
+    return fig_html
+
+
+def side_by_side_html(data1, data2, info=None, title1=None, title2=None, width=600, height=None, include_plotlyjs='cdn'):
     import plotly.graph_objects as go
 
     scene = dict(
@@ -110,13 +131,14 @@ def side_by_side_html(data1, data2, info=None, title1=None, title2=None):
             zaxis_range=[info['ymin'], info['ymax']],
             ))
 
+    if height is None: height = width
     fig1 = go.Figure(data=data1, **(dict(layout_title_text=title1) if title1 else {}))
-    fig1.update_layout(width=600, height=600, scene=scene)
+    fig1.update_layout(width=width, height=height, scene=scene)
 
     fig2 = go.Figure(data=data2, **(dict(layout_title_text=title2) if title2 else {}))
-    fig2.update_layout(width=600, height=600, scene=scene)
+    fig2.update_layout(width=width, height=height, scene=scene)
 
-    fig1_html = fig1.to_html(full_html=False, include_plotlyjs='cdn')
+    fig1_html = fig1.to_html(full_html=False, include_plotlyjs=include_plotlyjs)
     fig2_html = fig2.to_html(full_html=False, include_plotlyjs=False)
 
     id1 = fig1_html.split('<div id="',1)[1].split('"',1)[0]
@@ -133,7 +155,7 @@ def side_by_side_html(data1, data2, info=None, title1=None, title2=None):
         +
         '\nvar isUnderRelayout1 = false'
         '\ngraphdiv1.on("plotly_relayout", () => {'
-        '\n    console.log("relayout", isUnderRelayout1)'
+        '\n    // console.log("relayout", isUnderRelayout1)'
         '\n    if (!isUnderRelayout1) {'
         '\n        Plotly.relayout(graphdiv2, {"scene.camera": graphdiv1.layout.scene.camera})'
         '\n        .then(() => { isUnderRelayout1 = false }  )'
@@ -142,7 +164,7 @@ def side_by_side_html(data1, data2, info=None, title1=None, title2=None):
         '\n    })'
         '\nvar isUnderRelayout2 = false'
         '\ngraphdiv2.on("plotly_relayout", () => {'
-        '\n    console.log("relayout", isUnderRelayout2)'
+        '\n    // console.log("relayout", isUnderRelayout2)'
         '\n    if (!isUnderRelayout2) {'
         '\n        Plotly.relayout(graphdiv1, {"scene.camera": graphdiv2.layout.scene.camera})'
         '\n        .then(() => { isUnderRelayout2 = false }  )'
@@ -194,8 +216,8 @@ graphdiv2.on("plotly_restyle", () => {
                 }
             }
 
-        console.log(updateIndicesVisible)
-        console.log(updateIndicesInvisible)
+        // console.log(updateIndicesVisible)
+        // console.log(updateIndicesInvisible)
 
         Plotly.restyle(graphdiv1, {'visible' : true}, updateIndicesVisible)
         if (updateIndicesInvisible.length > 0){
@@ -205,12 +227,20 @@ graphdiv2.on("plotly_restyle", () => {
     })
 """
 
-def side_by_side_unmerged_merged(unmerged, merged, **kwargs):
+def side_by_side_unmerged_merged(unmerged, merged, outfile=None, **kwargs):
+    kwargs.setdefault('title1', 'Unmerged')
+    kwargs.setdefault('title2', 'Merged')
     html = side_by_side_trees(unmerged, merged, **kwargs)
     html = html.rsplit('\n',1)[0] # Split off last /script tag so more stuff can be added
     html += '\n' + parse_js_mergemap(merged) + '\n\n'
     html += JS_LINK_LEGENDS
     html += '\n</script>'
+    if outfile:
+        import os, os.path as osp
+        outdir = osp.dirname(osp.abspath(outfile))
+        if not osp.isdir(outdir): os.makedirs(outdir)
+        with open(outfile, 'w') as f:
+            f.write(html)
     return html
 
 
@@ -228,3 +258,10 @@ def parse_js_mergemap(tree, js_varname='mergemap'):
     js.append('}')
     return '\n    '.join(js)
 
+
+def write_html(outfile, html):
+    import os, os.path as osp
+    outdir = osp.dirname(osp.abspath(outfile))
+    if not osp.isdir(outdir): os.makedirs(outdir)
+    with open(outfile, 'w') as f:
+        f.write(html)

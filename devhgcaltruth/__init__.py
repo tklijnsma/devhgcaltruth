@@ -116,6 +116,32 @@ HGCAL_ZMAX_NEG = max(Z_NEG_LAYERS)
 # ___________________________________________________
 # plotting
 
+def digitize(n, base=10):
+    """
+    Splits (array of) integer(s) into digits (broadcastable)
+    """
+    digits = []
+    while not(np.all(n == 0)):
+        n, d = np.divmod(n, base)
+        digits.append(d)
+    return np.array(digits)
+
+def is_hadron(pdgid):
+    return np.abs(pdgid) >= 111
+
+def is_meson(pdgid):
+    pdgid = np.abs(pdgid)
+    digits = digitize(pdgid)
+    if digits.shape[1] >= 3:
+        return (digits[3] == 0) & (digits[2] > 0)
+    elif digits.shape[1] == 2:
+        return digits[2] > 0
+    else:
+        return np.zeros(pdgid.shape[0]).astype(np.bool)
+
+def is_baryon(pdgid):
+    return is_hadron(pdgid) & ~is_meson(pdgid)
+
 PDGID_COLORS = {
     0 : 'xkcd:purple', # undefined
     13 : 'xkcd:light blue', # muon

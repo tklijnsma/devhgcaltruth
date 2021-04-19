@@ -1067,7 +1067,8 @@ def overlap(t1, t2, draw=False, use_numba=True):
     if t2.energyAtBoundary > t1.energyAtBoundary: t1, t2 = t2, t1
 
     for t in [t1, t2]:
-        t.r = max(t.moliere_radius(.85), 1.5)
+        f_moliere_radius = .75 if ht.is_hadron(t.pdgid) else .85
+        t.r = max(t.moliere_radius(f_moliere_radius), 1.5)
         t.rotate, t.inv_rotate = make_rotation(t.axis, include_inverse=True)
     
     # Rotate everything to a coordinate system where axis1-z is the z-axis    
