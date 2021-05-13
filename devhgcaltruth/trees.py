@@ -5,8 +5,9 @@ import numba
 import devhgcaltruth as ht
 logger = ht.logger
 
-def traverse(node, yield_depth=False, depth=0):
-    yield (node, depth) if yield_depth else node
+def traverse(node, yield_depth=False, depth=0, only_with_hits=False):
+    if not(only_with_hits) or node.nhits > 0:
+        yield (node, depth) if yield_depth else node
     for child in node.children:
         yield from traverse(child, yield_depth, depth+1)
 
@@ -259,6 +260,10 @@ class Track(object):
         if not hasattr(self, '_axis'): self.update_hit_dependent_quantities()
         return self._axis
 
+    @property
+    def is_hadron(self):
+        if not hasattr(self, '_is_hadron'): self._is_hadron = ht.is_hadron(self.pdgid)
+        return self._is_hadron
 
     def update_hit_displacement_quantities(self):
         # Compute the displacements
@@ -839,7 +844,7 @@ class CachedDistFn():
                 del self.cache[(t1, t2)]
 
 
-def make_rotation(axis, include_inverse=False):
+def make_rotation(axis, include_inverse=False, debug=False):
     '''
     Takes a 3D axis, and builds a rotation matrix such that
     R.dot(v) will rotate v to a coordinate system where the z-axis
@@ -862,6 +867,8 @@ def make_rotation(axis, include_inverse=False):
         [-sin(dy), 0., cos(dy)],
         ])
     R = Rx.dot(Ry)
+    if debug:
+        logger.info('rotation for axis=%s:\ndx=%s, dy=%s,\nR=%s', axis, dx, dy, R)
     # logger.debug('Rotation matrix:\n%s', R)
     rotate = lambda v: v.dot(Rx.T).dot(Ry.T)
     if include_inverse:
@@ -910,7 +917,7 @@ def is_inside_numba(px, py, polyx, polyy):
     x2 = x2[select_cross_y_axis]
     y2 = y2[select_cross_y_axis]
 
-    select_vertical_edges = y1 == y2
+    select_vertical_edges = x1 == x2
 
     # Vertical edges are easy - sum up number of edges right of p
     wn += np.sum( x1[select_vertical_edges] > px )
@@ -1055,6 +1062,7 @@ def longitudinal_dist(t1, t2):
     re1 = rotate(e1-o)
     rb2 = rotate(b2-o)
     re2 = rotate(e2-o)
+    logger.info('rb1=%s, re1=%s, rb2=%s, re2=%s', rb1, re1, rb2, re2)
     if rb2[2] < rb1[2]: rb1, re1, rb2, re2 = rb2, re2, rb1, re1
     # print(rb1[2], re1[2], rb2[2], re2[2])
     return rb2[2] - re1[2]
@@ -1066,10 +1074,16 @@ def overlap(t1, t2, draw=False, use_numba=True):
 
     if t2.energyAtBoundary > t1.energyAtBoundary: t1, t2 = t2, t1
 
+    if t1.is_hadron != t2.is_hadron: # 1 hadron, 1 electromagnetic
+        f_moliere_radius = .3
+    elif t1.is_hadron: # 2 hadrons
+        f_moliere_radius = .75
+    else: # 2 electromagnetic
+        f_moliere_radius = .85
+
     for t in [t1, t2]:
-        f_moliere_radius = .75 if ht.is_hadron(t.pdgid) else .85
-        t.r = max(t.moliere_radius(f_moliere_radius), 1.5)
-        t.rotate, t.inv_rotate = make_rotation(t.axis, include_inverse=True)
+        t.r = max(t.moliere_radius(f_moliere_radius), 1.0)
+        t.rotate, t.inv_rotate = make_rotation(t.axis, include_inverse=True, debug=draw)
     
     # Rotate everything to a coordinate system where axis1-z is the z-axis    
     t1.raxis = t1.rotate(t1.axis) # Should be just (0, 0, 1), but compute it anyway
@@ -1086,6 +1100,35 @@ def overlap(t1, t2, draw=False, use_numba=True):
     t2.rcircle = t1.rotate(t2.rcircle - t1.b)
     
     if draw:
+        logger.info('t1.boundary_pos=%s, t1.centroid=%s', t1.b, t1.e)
+        logger.info('t2.boundary_pos=%s, t2.centroid=%s', t2.b, t2.e)
+        logger.info(
+            'f_moliere_radius=%s, t1.r=%s, t2.r=%s',
+            f_moliere_radius, t1.r, t2.r
+            )
+        logger.info('t1.axis=%s, t2.axis=%s', t1.axis, t2.axis)
+        logger.info('t1.rb=%s, t1.re=%s', t1.rb, t1.re)
+        logger.info('t2.rb=%s, t2.re=%s', t2.rb, t2.re)
+        logger.info(
+            't1.rcircle xmin=%s, xmax=%s, ymin=%s, ymax=%s',
+            min(t1.rcircle[:,0]), max(t1.rcircle[:,0]),
+            min(t1.rcircle[:,1]), max(t1.rcircle[:,1])
+            )
+        logger.info(
+            't2.rcircle xmin=%s, xmax=%s, ymin=%s, ymax=%s',
+            min(t2.rcircle[:,0]), max(t2.rcircle[:,0]),
+            min(t2.rcircle[:,1]), max(t2.rcircle[:,1])
+            )
+
+        logger.info(
+            't1.q10=%s, t1.q90=%s, t1.v_q10=%s, t1.v_q90=%s',
+            t1._long_q10, t1._long_q90, t1._v_q10, t1._v_q90
+            )
+        logger.info(
+            't2.q10=%s, t2.q90=%s, t2.v_q10=%s, t2.v_q90=%s',
+            t2._long_q10, t2._long_q90, t2._v_q10, t2._v_q90
+            )
+
         frac_2_in_1, h = polygon_overlap(t1.rcircle[:,:2], t2.rcircle[:,:2], draw=draw)
 
         # Unrotated plot
@@ -1208,6 +1251,8 @@ def perform_merging_for_node(
         for c1, c2 in combinations(children, 2):
             if use_overlap_algo:
                 overlap, dz = overlap_fn(c1, c2)
+                # Penalize overlap for non-hadron with hadron
+                # if c1.is_hadron != c2.is_hadron: overlap *= .6
                 if overlap > current_max_overlap[0] and dz < 10.:
                     current_max_overlap = (overlap, dz)
                     to_merge = (c1, c2)

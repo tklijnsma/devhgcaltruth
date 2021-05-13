@@ -1,4 +1,4 @@
-import numpy as np
+import numpy as np, uuid
 import devhgcaltruth as ht
 
 def plotly_tree(tree, colorwheel=None, noinfo=False, draw_tracks=True):
@@ -32,6 +32,7 @@ def plotly_tree(tree, colorwheel=None, noinfo=False, draw_tracks=True):
         opacity=0.25,
         name='HGCAL front',
         hoverinfo='skip',
+        visible='legendonly'
         ))
 
     info['n_tracks_with_hits'] = 0
@@ -39,6 +40,7 @@ def plotly_tree(tree, colorwheel=None, noinfo=False, draw_tracks=True):
     for track in sorted(filter(lambda t: t.nhits>0, tree.traverse()), key=lambda t: -t.nhits):
         if track.nhits == 0: continue
         info['n_tracks_with_hits'] += 1
+        visible = 'legendonly' if track.nhits <= 4 else True
 
         # First draw hits
         hits = track.nphits()
@@ -58,7 +60,8 @@ def plotly_tree(tree, colorwheel=None, noinfo=False, draw_tracks=True):
                 .format(track.pdgid)
                 ),
             name=str(int(track.trackid)),
-            legendgroup=str(int(track.trackid))
+            legendgroup=str(int(track.trackid)),
+            visible=visible
             ))
 
         if draw_tracks:
@@ -84,7 +87,8 @@ def plotly_tree(tree, colorwheel=None, noinfo=False, draw_tracks=True):
                     ),
                 name=str(int(track.trackid)),
                 legendgroup=str(int(track.trackid)),
-                showlegend=False
+                showlegend=False,
+                visible=visible
                 ))
     
     return data if noinfo else (data, info)
@@ -117,7 +121,11 @@ def single_html(data, info=None, title=None, width=600, height=None, include_plo
     return fig_html
 
 
-def side_by_side_html(data1, data2, info=None, title1=None, title2=None, width=600, height=None, include_plotlyjs='cdn'):
+def side_by_side_html(
+    data1, data2,
+    info=None, title1=None, title2=None, width=600, height=None, include_plotlyjs='cdn',
+    return_divids=False
+    ):
     import plotly.graph_objects as go
 
     scene = dict(
@@ -141,99 +149,101 @@ def side_by_side_html(data1, data2, info=None, title1=None, title2=None, width=6
     fig1_html = fig1.to_html(full_html=False, include_plotlyjs=include_plotlyjs)
     fig2_html = fig2.to_html(full_html=False, include_plotlyjs=False)
 
-    id1 = fig1_html.split('<div id="',1)[1].split('"',1)[0]
-    id2 = fig2_html.split('<div id="',1)[1].split('"',1)[0]
+    divid1 = fig1_html.split('<div id="',1)[1].split('"',1)[0]
+    divid2 = fig2_html.split('<div id="',1)[1].split('"',1)[0]
+
+    id1 = str(uuid.uuid4())[:6]
+    id2 = str(uuid.uuid4())[:6]
 
     html = (
         f'<div style="width: 47%; display: inline-block">\n{fig1_html}\n</div>'
         f'\n<div style="width: 47%; display: inline-block">\n{fig2_html}\n</div>'
-        +
-        '\n<script>'
-        +
-        f'\nvar graphdiv1 = document.getElementById("{id1}");'
-        f'\nvar graphdiv2 = document.getElementById("{id2}");'
-        +
-        '\nvar isUnderRelayout1 = false'
-        '\ngraphdiv1.on("plotly_relayout", () => {'
-        '\n    // console.log("relayout", isUnderRelayout1)'
-        '\n    if (!isUnderRelayout1) {'
-        '\n        Plotly.relayout(graphdiv2, {"scene.camera": graphdiv1.layout.scene.camera})'
-        '\n        .then(() => { isUnderRelayout1 = false }  )'
-        '\n        }'
-        '\n    isUnderRelayout1 = true;'
-        '\n    })'
-        '\nvar isUnderRelayout2 = false'
-        '\ngraphdiv2.on("plotly_relayout", () => {'
-        '\n    // console.log("relayout", isUnderRelayout2)'
-        '\n    if (!isUnderRelayout2) {'
-        '\n        Plotly.relayout(graphdiv1, {"scene.camera": graphdiv2.layout.scene.camera})'
-        '\n        .then(() => { isUnderRelayout2 = false }  )'
-        '\n        }'
-        '\n    isUnderRelayout2 = true;'
-        '\n    })'
-        '\n</script>'
+        f'\n<script>'
+        f'\nvar graphdiv_{id1} = document.getElementById("{divid1}");'
+        f'\nvar graphdiv_{id2} = document.getElementById("{divid2}");'
+        f'\nvar isUnderRelayout_{id1} = false'
+        f'\ngraphdiv_{id1}.on("plotly_relayout", () => {{'
+        f'\n    // console.log("relayout", isUnderRelayout_{id1})'
+        f'\n    if (!isUnderRelayout_{id1}) {{'
+        f'\n        Plotly.relayout(graphdiv_{id2}, {{"scene.camera": graphdiv_{id1}.layout.scene.camera}})'
+        f'\n        .then(() => {{ isUnderRelayout_{id1} = false }}  )'
+        f'\n        }}'
+        f'\n    isUnderRelayout_{id1} = true;'
+        f'\n    }})'
+        f'\nvar isUnderRelayout_{id2} = false'
+        f'\ngraphdiv_{id2}.on("plotly_relayout", () => {{'
+        f'\n    // console.log("relayout", isUnderRelayout_{id2})'
+        f'\n    if (!isUnderRelayout_{id2}) {{'
+        f'\n        Plotly.relayout(graphdiv_{id1}, {{"scene.camera": graphdiv_{id2}.layout.scene.camera}})'
+        f'\n        .then(() => {{ isUnderRelayout_{id2} = false }}  )'
+        f'\n        }}'
+        f'\n    isUnderRelayout_{id2} = true;'
+        f'\n    }})'
+        f'\n</script>'
         )
-    return html
+    return (html, id1, id2) if return_divids else html
 
-JS_LINK_LEGENDS = r"""
-function isTrack(entry){
-    return /^\d+$/.test(entry["name"])
-    }
+def js_link_legends(id1, id2, mergemap_varname='mergemap'):
+    return f"""
+function isTrack(entry){{
+    return /^\\d+$/.test(entry["name"])
+    }}
 
-graphdiv2.on("plotly_restyle", () => {
+graphdiv_{id2}.on("plotly_restyle", () => {{
     console.log('Restyling based on legend click')
-    if (graphdiv2.data.every(entry => entry["visible"] === true)){
+    if (graphdiv_{id2}.data.every(entry => entry["visible"] === true)){{
         // Shortcut if everything is on
         console.log("Detected everything turned on")
-        Plotly.restyle(graphdiv1, {'visible' : true}, [...Array(graphdiv1.data.length).keys()])
-        .then(() => {isUnderRestyle2 = false})
-        }
-    else{
-        let visibleTracksIn2 = new Set(
-            graphdiv2.data
+        Plotly.restyle(graphdiv_{id1}, {{'visible' : true}}, [...Array(graphdiv_{id1}.data.length).keys()])
+        .then(() => {{isUnderRestyle_{id2} = false}})
+        }}
+    else{{
+        let visibleTracksIn_{id2} = new Set(
+            graphdiv_{id2}.data
             .filter(entry => isTrack(entry) && (entry["visible"] === true || !("visible" in entry)))
             .map(entry => entry["name"])
             )
-        console.log(visibleTracksIn2)
+        console.log(visibleTracksIn_{id2})
 
-        let visibleTracksIn1 = new Set()
-        visibleTracksIn2.forEach(trackid => {
-            mergemap[trackid].forEach(merged_trackid => visibleTracksIn1.add(merged_trackid))
-            })
-        console.log(visibleTracksIn1)
+        let visibleTracksIn_{id1} = new Set()
+        visibleTracksIn_{id2}.forEach(trackid => {{
+            {mergemap_varname}[trackid].forEach(merged_trackid => visibleTracksIn_{id1}.add(merged_trackid))
+            }})
+        console.log(visibleTracksIn_{id1})
 
         updateIndicesVisible = []
         updateIndicesInvisible = []
-        for (var i = 0; i < graphdiv1.data.length; i++) {
-            let entry = graphdiv1.data[i]
-            if (!isTrack(entry)){ continue }
+        for (var i = 0; i < graphdiv_{id1}.data.length; i++) {{
+            let entry = graphdiv_{id1}.data[i]
+            if (!isTrack(entry)){{ continue }}
             let name = entry["name"]
-            if (visibleTracksIn1.has(name)){
+            if (visibleTracksIn_{id1}.has(name)){{
                 updateIndicesVisible.push(i)
-                }
-            else {
+                }}
+            else {{
                 updateIndicesInvisible.push(i)
-                }
-            }
+                }}
+            }}
 
         // console.log(updateIndicesVisible)
         // console.log(updateIndicesInvisible)
 
-        Plotly.restyle(graphdiv1, {'visible' : true}, updateIndicesVisible)
-        if (updateIndicesInvisible.length > 0){
-            Plotly.restyle(graphdiv1, {'visible' : "legendonly"}, updateIndicesInvisible)
-            }
-        }
-    })
+        Plotly.restyle(graphdiv_{id1}, {{'visible' : true}}, updateIndicesVisible)
+        if (updateIndicesInvisible.length > 0){{
+            Plotly.restyle(graphdiv_{id1}, {{'visible' : "legendonly"}}, updateIndicesInvisible)
+            }}
+        }}
+    }})
 """
 
 def side_by_side_unmerged_merged(unmerged, merged, outfile=None, **kwargs):
     kwargs.setdefault('title1', 'Unmerged')
     kwargs.setdefault('title2', 'Merged')
-    html = side_by_side_trees(unmerged, merged, **kwargs)
+    kwargs['return_divids'] = True
+    html, id1, id2 = side_by_side_trees(unmerged, merged, **kwargs)
     html = html.rsplit('\n',1)[0] # Split off last /script tag so more stuff can be added
-    html += '\n' + parse_js_mergemap(merged) + '\n\n'
-    html += JS_LINK_LEGENDS
+    html += '\n' + parse_js_mergemap(merged, f'mergemap_{id1}') + '\n\n'
+    html += js_link_legends(id1, id2, f'mergemap_{id1}')
     html += '\n</script>'
     if outfile:
         import os, os.path as osp
@@ -246,7 +256,7 @@ def side_by_side_unmerged_merged(unmerged, merged, outfile=None, **kwargs):
 
 
 def parse_js_mergemap(tree, js_varname='mergemap'):
-    js = ['var mergemap = {']
+    js = ['var ' + js_varname + ' = {']
     for track in tree.children:
         js.append(
             '"{}" : {},'
@@ -261,6 +271,8 @@ def parse_js_mergemap(tree, js_varname='mergemap'):
 
 def write_html(outfile, html):
     import os, os.path as osp
+    from time import strftime
+    outfile = strftime(outfile)
     outdir = osp.dirname(osp.abspath(outfile))
     if not osp.isdir(outdir): os.makedirs(outdir)
     with open(outfile, 'w') as f:
